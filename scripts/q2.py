@@ -34,7 +34,7 @@ class Questao2:
 		self.lower_hsv = np.array([19,20,50],dtype=np.uint8) # Blue
 		self.upper_hsv = np.array([151,255,255],dtype=np.uint8)
 		self.kernel = np.ones((3,3),np.uint8)
-		self.kp = 600
+		self.kp = 700
 		self.ombro = rospy.Publisher("/joint1_position_controller/command", Float64, queue_size=1)
 		self.garra = rospy.Publisher("/joint2_position_controller/command", Float64, queue_size=1)
 		# Subscribers
@@ -45,7 +45,7 @@ class Questao2:
         # Publishers
 		self.cmd_vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=3)
 		self.cmd_vel_pub.publish(Twist())
-		self.contador = 4
+		self.contador = 0
 		# Maquina de estados
 		self.state = ""
 		self.robot_state = "procura"
@@ -123,11 +123,14 @@ class Questao2:
 	def procura(self):
 		self.garra.publish(1.0)
 		self.ombro.publish(-1.5)
+		if self.contador > 0:
+			self.twist.linear.x = -1.0
+			
 		if self.pontos_aruco != -1:
 			self.twist = Twist()
 			self.robot_state = "aproxima"
 		else:
-			self.twist.angular.z = 0.2
+			self.twist.angular.z = 0.3
 
 	def aproxima(self):
 		self.point.x = self.pontos_aruco.x			
@@ -135,24 +138,28 @@ class Questao2:
 		# print(self.point.x)
 		# print(self.twist.angular.z)
 		self.twist.linear.x = 0.2
-		if np.min(self.frente) < 0.4:
+		if np.min(self.frente) < 0.3:
 			self.robot_state = "derruba"
 		elif self.point.x == -1:
 			self.twist.linear.x = 0.0
 			self.twist.angular.z = -0.2
 	
 	def derruba(self):
+		self.twist = Twist()
+		self.twist.linear.x = 0.0
+		self.twist.angular.z = 0.0
 		if self.state != "ultimo_aruco":
-			self.twist = Twist()
 			self.twist.linear.x = 0.0
 			self.twist.angular.z = 0.0
-			#levanta
-			time.sleep(1.5)
+			#levanta			
+			self.twist = Twist()
+
+			time.sleep(1.3)
 			self.ombro.publish(1.0) # numeros postivos 
-			time.sleep(1.5)
+			time.sleep(2.5)
 			#abaixa
 			self.ombro.publish(-1.5) #numeros negativos
-			time.sleep(1.5)
+			time.sleep(1.8)
 			if self.areas_aruco >14000:
 				#levanta
 				time.sleep(1.5)
@@ -165,6 +172,7 @@ class Questao2:
 				self.contador += 1
 			if self.contador == 5:
 				self.state = "ultimo_aruco"
+				self.robot_state = "procura"
 			else:
 				self.robot_state = "procura"
 		else:
@@ -187,8 +195,9 @@ class Questao2:
 		self.ombro.publish(0) #levanta o ombro ate a metade
 		rospy.sleep(0.45)
 		self.garra.publish(1.0) #fecha a garra pra pegar o aruco
-		rospy.sleep(1)
+		rospy.sleep(0.2)
 		self.ombro.publish(1.5)	#levanta o ombro ate o final
+		rospy.sleep(0.2)
 		self.garra.publish(-1.0) #abre a garra pra pegar o aruco
 		self.robot_state = "fim"
 
