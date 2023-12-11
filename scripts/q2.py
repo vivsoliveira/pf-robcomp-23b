@@ -35,8 +35,6 @@ class Questao2:
 		self.upper_hsv = np.array([151,255,255],dtype=np.uint8)
 		self.kernel = np.ones((3,3),np.uint8)
 		self.kp = 600
-		self.start = Point(x = -1000)
-		# self.sai_do_mesmo_creeeper = False
 		self.ombro = rospy.Publisher("/joint1_position_controller/command", Float64, queue_size=1)
 		self.garra = rospy.Publisher("/joint2_position_controller/command", Float64, queue_size=1)
 		# Subscribers
@@ -47,10 +45,7 @@ class Questao2:
         # Publishers
 		self.cmd_vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=3)
 		self.cmd_vel_pub.publish(Twist())
-		self.tempo_atual = 0
-		self.tempo_percorido = 0
-		self.tempo_inicial = 0
-		self.contador = 3
+		self.contador = 4
 		# Maquina de estados
 		self.state = ""
 		self.robot_state = "procura"
@@ -58,8 +53,8 @@ class Questao2:
 			"procura": self.procura,
 			"aproxima": self.aproxima,
 			"derruba": self.derruba,
-			"para": self.para,
 			"ultimo_aruco": self.ultimo_aruco,
+			"garra_final": self.garra_final,
 			"fim": self.fim,
 		}
 	
@@ -126,14 +121,13 @@ class Questao2:
 		self.twist.angular.z = self.err / self.kp
 
 	def procura(self):
-		if self.state != "ultimo_aruco":
-			if self.pontos_aruco != -1:
-				self.twist = Twist()
-				self.robot_state = "aproxima"
-			else:
-				self.twist.angular.z = 0.2
+		self.garra.publish(1.0)
+		self.ombro.publish(-1.5)
+		if self.pontos_aruco != -1:
+			self.twist = Twist()
+			self.robot_state = "aproxima"
 		else:
-			self.robot_state = "ultimo_aruco"
+			self.twist.angular.z = 0.2
 
 	def aproxima(self):
 		self.point.x = self.pontos_aruco.x			
@@ -141,15 +135,15 @@ class Questao2:
 		# print(self.point.x)
 		# print(self.twist.angular.z)
 		self.twist.linear.x = 0.2
-		if np.min(self.frente) < 0.3:
+		if np.min(self.frente) < 0.4:
 			self.robot_state = "derruba"
 		elif self.point.x == -1:
 			self.twist.linear.x = 0.0
 			self.twist.angular.z = -0.2
 	
 	def derruba(self):
-		self.twist = Twist()
 		if self.state != "ultimo_aruco":
+			self.twist = Twist()
 			self.twist.linear.x = 0.0
 			self.twist.angular.z = 0.0
 			#levanta
@@ -174,47 +168,34 @@ class Questao2:
 			else:
 				self.robot_state = "procura"
 		else:
-			self.robot_state = "procura"
+			self.robot_state = "ultimo_aruco"
 
 	def ultimo_aruco(self):
-		self.point.x = self.pontos_aruco.x			
+		self.point.x = self.pontos_aruco.x
 		self.get_error()
-		# print(self.point.x)
-		# print(self.twist.angular.z)
-		self.twist.linear.x = 0.2
-		if np.min(self.frente) < 0.5:
-			self.twist.linear.x = 0.0
-			self.twist.angular.z = 0.0
-			#levanta
-			time.sleep(1.5)
-			self.ombro.publish(1.0) # numeros postivos 
-			time.sleep(1.5)
-			#abaixa
-			self.ombro.publish(-1.5) #numeros negativos
-			time.sleep(1.5)
-			if self.areas_aruco >15000:
-				#levanta
-				time.sleep(1.5)
-				self.ombro.publish(1.0) # numeros postivos 
-				time.sleep(1.5)
-				#abaixa
-				self.ombro.publish(-1.5) #numeros negativos
-				time.sleep(1.5)
-			else:
-				self.robot_state = "para"
-	def para(self):
-		if self.state == "ultimo_aruco":
-			self.twist = Twist()
-			self.twist.linear.x = 0.0
-			self.twist.angular.z = 0.0
-			self.garra.publish(0)
-			rospy.sleep(1)
-			self.ombro.publish(1.5)
-			rospy.sleep(0.3)
-			self.garra.publish(-1.5)
+		self.twist.linear.x = 0.1
+		if np.min(self.frente) < 0.35:
+			self.robot_state = "garra_final"
+
+	def garra_final(self):
+		self.twist = Twist()
+		self.twist.linear.x = 0.0
+		self.twist.angular.z = 0.0
+		time.sleep(1.5)
+		self.garra.publish(-1.0) #abre a garra
+		rospy.sleep(0.7)
+		self.ombro.publish(0) #levanta o ombro ate a metade
+		rospy.sleep(0.45)
+		self.garra.publish(1.0) #fecha a garra pra pegar o aruco
+		rospy.sleep(1)
+		self.ombro.publish(1.5)	#levanta o ombro ate o final
+		self.garra.publish(-1.0) #abre a garra pra pegar o aruco
 		self.robot_state = "fim"
+
 	def fim(self):
 		self.twist = Twist()
+		self.twist.linear.x = 0.0
+		self.twist.angular.z = 0.0
 		print("FIM!")
 
 	def control(self) -> None:
@@ -222,7 +203,6 @@ class Questao2:
 		Esta função é chamada pelo menos em {self.rate} Hz.
 		Esta função controla o robô.
 		'''
-		print(self.robot_state)
 		self.twist = Twist()
 		print(f'self.robot_state: {self.robot_state}')
 		print(self.contador)
